@@ -89,6 +89,6 @@ contract Drop {
         if (!revealed) return baseURI;
 
         return string.concat(baseURI, Strings.toString(id), ".json");
-}
+    }
 
 }
