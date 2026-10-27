@@ -10,12 +10,29 @@ contract ZeppelinDropTest is Test {
     uint256 constant PRICE = 0.01 ether;
 
     address alice = makeAddr("alice");
+    address bob = makeAddr("bob");
+    bytes32 leafAlice;
+    bytes32 leafBob;
+
+    address eve = makeAddr("eve");
     
     uint256 constant SUPPLY = 10;
 
     function setUp() public {
         drop = new ZeppelinDrop(PRICE, SUPPLY);
         deal(alice, 1 ether);
+        deal(bob, 1 ether);
+        deal(eve, 1 ether);
+        drop.setMerkleRoot(_buildTree());
+    }
+
+    function _buildTree() internal returns (bytes32 root) {
+        leafAlice = keccak256(abi.encodePacked(alice));
+        leafBob = keccak256(abi.encodePacked(bob));
+        // OZ хеширует пару в отсортированном порядке
+        root = leafAlice < leafBob
+            ? keccak256(abi.encodePacked(leafAlice, leafBob))
+            : keccak256(abi.encodePacked(leafBob, leafAlice));
     }
 
     function test_TokenURI_BeforeReveal_SameForAll() public {
@@ -69,6 +86,26 @@ contract ZeppelinDropTest is Test {
         drop.mint{value: PRICE}();
         drop.safeTransferFrom(address(this), alice, 0);
         assertEq(drop.ownerOf(0), alice);
+    }
+
+    function test_allowlistMint() public {
+
+        bytes32[] memory proof = new bytes32[](1);
+        proof[0] = leafBob;          // сосед Алисы
+
+        vm.prank(alice);
+        drop.allowlistMint{value: PRICE}(proof);
+
+        assertEq(drop.ownerOf(0), alice);
+
+        vm.prank(alice);
+        vm.expectRevert(ZeppelinDrop.AlreadyClaimed.selector);
+        drop.allowlistMint{value: PRICE}(proof);
+        
+        vm.prank(eve);
+        vm.expectRevert(ZeppelinDrop.NotInAllowlist.selector);
+        drop.allowlistMint{value: PRICE}(proof);
+
     }
 
 

@@ -3,9 +3,11 @@ pragma solidity ^0.8.13;
 
 import {Strings} from "openzeppelin-contracts/contracts/utils/Strings.sol";
 import {ERC721} from "openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
+import {MerkleProof} from "openzeppelin-contracts/contracts/utils/cryptography/MerkleProof.sol";
 
 contract ZeppelinDrop is ERC721 {
     uint256 public constant MAX_PER_WALLET = 3;
+
 
     uint256 public immutable mintPrice;
     uint256 public immutable maxSupply;
@@ -16,6 +18,12 @@ contract ZeppelinDrop is ERC721 {
     string public baseURI = "notrevealedyet";
 
     mapping(address => uint256) public minted;
+
+    bytes32 public merkleRoot;                    // корень дерева
+    mapping(address => bool) public allowlistClaimed; // кто уже минтил по allowlist
+
+    error NotInAllowlist();
+    error AlreadyClaimed();
 
     error LimitReached(address user);
     error NotEnoughFundsReceived(uint256 funds);
@@ -30,7 +38,7 @@ contract ZeppelinDrop is ERC721 {
         owner = msg.sender;
     }
 
-    function mint() external payable {
+    function _mintOne() internal {
         uint256 id = totalSupply;
         if (id >= maxSupply) revert MaxSupplyReached();
         if (msg.value < mintPrice) revert NotEnoughFundsReceived(msg.value);
@@ -47,6 +55,19 @@ contract ZeppelinDrop is ERC721 {
             (bool success, ) = msg.sender.call{value: msg.value - mintPrice}("");
             if (!success) revert TransferFailed();
         }
+    }
+
+    function mint() external payable {
+        _mintOne();
+    }
+
+    function allowlistMint(bytes32[] calldata proof) external payable {
+        if (allowlistClaimed[msg.sender]) revert AlreadyClaimed();
+        bytes32 leaf = keccak256(abi.encodePacked(msg.sender));
+        bool mproof = MerkleProof.verify(proof, merkleRoot, leaf);
+        if (!mproof) revert NotInAllowlist();
+        allowlistClaimed[msg.sender] = true;
+        _mintOne();
     }
 
     function withdraw() external {
@@ -67,4 +88,11 @@ contract ZeppelinDrop is ERC721 {
         if (!revealed) return baseURI;
         return string.concat(baseURI, Strings.toString(id), ".json");
     }
+
+    function setMerkleRoot(bytes32 root) external {
+        if (msg.sender != owner) revert NotOwner();
+        merkleRoot = root;
+    }
+
+    
 }
