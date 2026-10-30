@@ -18,12 +18,51 @@ contract ZeppelinDropTest is Test {
     
     uint256 constant SUPPLY = 10;
 
+    address signer;
+    uint256 signerPk;
+
     function setUp() public {
         drop = new ZeppelinDrop(PRICE, SUPPLY);
         deal(alice, 1 ether);
         deal(bob, 1 ether);
         deal(eve, 1 ether);
         drop.setMerkleRoot(_buildTree());
+        (signer, signerPk) = makeAddrAndKey("signer");   // «сервер» с ключом
+        drop.setSigner(signer);
+    }
+
+    function _sign(address to, uint256 deadline) internal view returns (bytes memory) {
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerPk, drop.mintDigest(to, deadline));
+        return abi.encodePacked(r, s, v);
+    }
+
+    function test_SignatureMint_Alice() public {
+        uint256 deadline = block.timestamp + 1 hours;
+        bytes memory sig = _sign(alice, deadline);
+
+        vm.prank(alice);
+        drop.signatureMint{value: PRICE}(deadline, sig);
+
+        assertEq(drop.ownerOf(0), alice);
+    }
+
+    function test_SignatureMint_Evefake() public {
+        uint256 deadline = block.timestamp + 1 hours;
+        bytes memory sig = _sign(alice, deadline);
+
+        vm.prank(eve);
+        vm.expectRevert(ZeppelinDrop.BadSignature.selector);
+        drop.signatureMint{value: PRICE}(deadline, sig);
+    }
+
+    function test_SignatureMint_AliceDeadline() public {
+        uint256 deadline = block.timestamp + 1 hours;
+        bytes memory sig = _sign(alice, deadline);
+        vm.warp(block.timestamp + 2 hours);
+        vm.expectRevert(ZeppelinDrop.Expired.selector);
+        vm.prank(alice);
+        drop.signatureMint{value: PRICE}(deadline, sig);
+
     }
 
     function _buildTree() internal returns (bytes32 root) {

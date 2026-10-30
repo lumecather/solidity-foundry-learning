@@ -4,14 +4,17 @@ pragma solidity ^0.8.13;
 import {Strings} from "openzeppelin-contracts/contracts/utils/Strings.sol";
 import {ERC721} from "openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
 import {MerkleProof} from "openzeppelin-contracts/contracts/utils/cryptography/MerkleProof.sol";
+import {EIP712} from "openzeppelin-contracts/contracts/utils/cryptography/EIP712.sol";
+import {ECDSA} from "openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
 
-contract ZeppelinDrop is ERC721 {
+contract ZeppelinDrop is ERC721, EIP712 {
     uint256 public constant MAX_PER_WALLET = 3;
 
 
     uint256 public immutable mintPrice;
     uint256 public immutable maxSupply;
     address public immutable owner;
+    address public signer;
 
     uint256 public totalSupply;
     bool public revealed;
@@ -19,8 +22,14 @@ contract ZeppelinDrop is ERC721 {
 
     mapping(address => uint256) public minted;
 
+    bytes32 constant MINT_TYPEHASH = keccak256("Mint(address to,uint256 deadline)");
+
     bytes32 public merkleRoot;                    // корень дерева
     mapping(address => bool) public allowlistClaimed; // кто уже минтил по allowlist
+
+    mapping(address => bool) public signatureClaimed;
+    error Expired();
+    error BadSignature();
 
     error NotInAllowlist();
     error AlreadyClaimed();
@@ -32,7 +41,7 @@ contract ZeppelinDrop is ERC721 {
     error AlreadyRevealed();
     error MaxSupplyReached();
 
-    constructor(uint256 price, uint256 supply) ERC721("Zeppelin Drop", "ZDROP") {
+    constructor(uint256 price, uint256 supply) ERC721("Zeppelin Drop", "ZDROP") EIP712("MyToken", "1") {
         mintPrice = price;
         maxSupply = supply;
         owner = msg.sender;
@@ -58,6 +67,21 @@ contract ZeppelinDrop is ERC721 {
     }
 
     function mint() external payable {
+        _mintOne();
+    }
+
+    function signatureMint(uint256 deadline, bytes calldata signature) external payable {
+
+        if (block.timestamp > deadline) revert Expired();
+
+        if (signatureClaimed[msg.sender]) revert AlreadyClaimed();
+
+        address who = ECDSA.recover(mintDigest(msg.sender, deadline), signature);
+
+        if (who != signer) revert BadSignature();
+
+        signatureClaimed[msg.sender] = true;
+
         _mintOne();
     }
 
@@ -94,5 +118,14 @@ contract ZeppelinDrop is ERC721 {
         merkleRoot = root;
     }
 
+
+    function setSigner(address signerr) external {
+        if (msg.sender != owner) revert NotOwner();
+        signer = signerr;
+    }
+
+    function mintDigest(address to, uint256 deadline) public view returns (bytes32 digest) {
+        return(_hashTypedDataV4(keccak256(abi.encode(MINT_TYPEHASH, to, deadline))));
+    }
     
 }
