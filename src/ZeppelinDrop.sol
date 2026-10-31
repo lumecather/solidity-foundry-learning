@@ -6,14 +6,15 @@ import {ERC721} from "openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
 import {MerkleProof} from "openzeppelin-contracts/contracts/utils/cryptography/MerkleProof.sol";
 import {EIP712} from "openzeppelin-contracts/contracts/utils/cryptography/EIP712.sol";
 import {ECDSA} from "openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
+import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
+import {ERC2981} from "openzeppelin-contracts/contracts/token/common/ERC2981.sol";
 
-contract ZeppelinDrop is ERC721, EIP712 {
+contract ZeppelinDrop is ERC721, EIP712, Ownable, ERC2981 {
     uint256 public constant MAX_PER_WALLET = 3;
 
 
     uint256 public immutable mintPrice;
     uint256 public immutable maxSupply;
-    address public immutable owner;
     address public signer;
 
     uint256 public totalSupply;
@@ -37,14 +38,15 @@ contract ZeppelinDrop is ERC721, EIP712 {
     error LimitReached(address user);
     error NotEnoughFundsReceived(uint256 funds);
     error TransferFailed();
-    error NotOwner();
     error AlreadyRevealed();
     error MaxSupplyReached();
 
-    constructor(uint256 price, uint256 supply) ERC721("Zeppelin Drop", "ZDROP") EIP712("MyToken", "1") {
+    event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
+
+    constructor(uint256 price, uint256 supply) ERC721("Zeppelin Drop", "ZDROP") EIP712("MyToken", "1") Ownable(msg.sender) {
         mintPrice = price;
         maxSupply = supply;
-        owner = msg.sender;
+        _setDefaultRoyalty(msg.sender, 500); 
     }
 
     function _mintOne() internal {
@@ -94,17 +96,16 @@ contract ZeppelinDrop is ERC721, EIP712 {
         _mintOne();
     }
 
-    function withdraw() external {
-        if (msg.sender != owner) revert NotOwner();
-        (bool success, ) = owner.call{value: address(this).balance}("");
+    function withdraw() onlyOwner external {
+        (bool success, ) = owner().call{value: address(this).balance}("");
         if (!success) revert TransferFailed();
     }
 
-    function reveal(string calldata newURI) external {
-        if (msg.sender != owner) revert NotOwner();
+    function reveal(string calldata newURI) onlyOwner external {
         if (revealed) revert AlreadyRevealed();
         revealed = true;
         baseURI = newURI;
+        emit BatchMetadataUpdate(0, type(uint256).max);
     }
 
     function tokenURI(uint256 id) public view override returns (string memory) {
@@ -113,19 +114,20 @@ contract ZeppelinDrop is ERC721, EIP712 {
         return string.concat(baseURI, Strings.toString(id), ".json");
     }
 
-    function setMerkleRoot(bytes32 root) external {
-        if (msg.sender != owner) revert NotOwner();
+    function setMerkleRoot(bytes32 root) onlyOwner external {
         merkleRoot = root;
     }
 
 
-    function setSigner(address signerr) external {
-        if (msg.sender != owner) revert NotOwner();
+    function setSigner(address signerr) onlyOwner external {
         signer = signerr;
     }
 
     function mintDigest(address to, uint256 deadline) public view returns (bytes32 digest) {
         return(_hashTypedDataV4(keccak256(abi.encode(MINT_TYPEHASH, to, deadline))));
     }
-    
+
+    function supportsInterface(bytes4 id) public view override(ERC721, ERC2981) returns (bool) {
+      return super.supportsInterface(id);
+  }
 }

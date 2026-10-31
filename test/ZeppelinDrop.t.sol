@@ -3,6 +3,8 @@ pragma solidity ^0.8.13;
 
 import {Test} from "forge-std/Test.sol";
 import {ZeppelinDrop} from "../src/ZeppelinDrop.sol";
+import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
+
 
 contract ZeppelinDropTest is Test {
     ZeppelinDrop public drop;
@@ -106,12 +108,12 @@ contract ZeppelinDropTest is Test {
         small.reveal("ipfs://xyz/");
     }
 
-    function test_RevealNotOwner() public {
+    function test_OwnableUnauthorizedAccount() public {
         vm.prank(alice);
-        vm.expectRevert(ZeppelinDrop.NotOwner.selector);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
         drop.reveal("ipfs://abc/");
         vm.prank(alice);
-        vm.expectRevert(ZeppelinDrop.NotOwner.selector);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
         drop.withdraw();
 
     }
@@ -147,5 +149,15 @@ contract ZeppelinDropTest is Test {
 
     }
 
+    function test_royaltyinfo() public view {
+        (address a, uint256 b) = drop.royaltyInfo(0, 1 ether);
+        assertEq(a, address(this));
+        assertEq(b, 0.05 ether);
+    }
 
+    function test_reveal() public {
+        vm.expectEmit(false, false, false, true);
+        emit ZeppelinDrop.BatchMetadataUpdate(0, type(uint256).max);
+        drop.reveal("ipfs://abc/");
+    }
 }
