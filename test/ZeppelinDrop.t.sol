@@ -160,4 +160,12 @@ contract ZeppelinDropTest is Test {
         emit ZeppelinDrop.BatchMetadataUpdate(0, type(uint256).max);
         drop.reveal("ipfs://abc/");
     }
+
+    function testFuzz_MintRevertsBelowPrice(uint256 qty) public {
+        qty = bound(qty, 0, PRICE - 1);
+        vm.startPrank(alice);
+        vm.expectRevert(abi.encodeWithSelector(ZeppelinDrop.NotEnoughFundsReceived.selector, qty));
+        drop.mint{value: qty}();
+        vm.stopPrank();
+    }
 }
